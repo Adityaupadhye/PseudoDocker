@@ -8,6 +8,7 @@
 #include <sys/utsname.h>
 #include <sched.h>
 #include <sys/syscall.h>
+#include <fcntl.h>
 
 #define errExit(msg)        \
     do                      \
@@ -95,10 +96,11 @@ int main() {
 
    // ------------------ WRITE CODE HERE ------------------
 
+   child_pid = clone(child_function, child_stack + CHILD_STACK_SIZE, CLONE_NEWUTS | CLONE_NEWPID | SIGCHLD, pipefd);
 
-
-
-
+   if(child_pid == -1) {
+    errExit("child clone");
+   }
 
    // -----------------------------------------------------
 
@@ -114,7 +116,22 @@ int main() {
 
     // ------------------ WRITE CODE HERE ------------------
 
+    // pid namespace
+    char child_ns_pid_path[50];
+    sprintf(child_ns_pid_path, "/proc/%d/ns/pid", (int) child_pid);
 
+    int pid_fd = open(child_ns_pid_path, O_RDONLY);
+    if (pid_fd == -1) {
+        perror("open child ns pid");
+        exit(EXIT_FAILURE);
+    }
+
+    if (setns(pid_fd, 0) == -1) {
+        perror("setns");
+        exit(EXIT_FAILURE);
+    }
+
+    close(pid_fd);
 
 
     // -----------------------------------------------------
@@ -135,7 +152,22 @@ int main() {
 
         // ------------------ WRITE CODE HERE ------------------
 
+        // uts namespace
+        char child_ns_uts_path[50];
+        sprintf(child_ns_uts_path, "/proc/%d/ns/uts", (int) child_pid);
 
+        int fd_uts = open(child_ns_uts_path, O_RDONLY);
+        if (fd_uts == -1) {
+            perror("open child ns uts");
+            exit(EXIT_FAILURE);
+        }
+
+        if (setns(fd_uts, 0) == -1) {
+            perror("setns");
+            exit(EXIT_FAILURE);
+        }
+
+        close(fd_uts);
 
         // -----------------------------------------------------
 
