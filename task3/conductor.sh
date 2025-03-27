@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # CS695 Conductor that manages containers 
-# Author: <your-name>
+# Author: Aditya Upadhye
 #
 echo -e "\e[1;32mCS695 Conductor that manages containers\e[0m"
 
@@ -112,18 +112,49 @@ handle_run() {
     
     # Subtask 3.f.1
     # Create new layer
+    mkdir -p "$CACHEDIR/layers/$layer_hash"/diff || die "Failed to create RUN layer directory - diff"
+    mkdir -p "$CACHEDIR/layers/$layer_hash"/work || die "Failed to create RUN layer directory - work"
+    mkdir -p "$CACHEDIR/layers/$layer_hash"/merged || die "Failed to create RUN layer directory - merged"       
     
 
     # Subtask 3.f.2
     # Temporarily mount the overlay filesystem
+    mount -t overlay overlay \
+          -o lowerdir="$parent_layers",upperdir="$CACHEDIR/layers/$layer_hash/diff",workdir="$CACHEDIR/layers/$layer_hash/work" \
+          "$CACHEDIR/layers/$layer_hash/merged" || die "Failed to mount overlay for RUN"
     
 
     # Subtask 3.f.3
     # Execute the command in the new mount
+    (
+        # setting up a minimal env
+        export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        
+        # mount essential filesystems
+        mount -t proc proc "$CACHEDIR/layers/$layer_hash/merged/proc" || die "[RUN] Failed to mount proc"
+        mount -t sysfs sys "$CACHEDIR/layers/$layer_hash/merged/sys" || die "[RUN] Failed to mount sys"
+        mount --bind /dev "$CACHEDIR/layers/$layer_hash/merged/dev" || die "[RUN] Failed to bind mount /dev"
+        
+        # execute command in chroot
+        chroot "$CACHEDIR/layers/$layer_hash/merged" /bin/sh -c "$command" || die "RUN command failed: $command"
+        
+        # cleanup mounts
+        umount "$CACHEDIR/layers/$layer_hash/merged/proc" || :
+        umount "$CACHEDIR/layers/$layer_hash/merged/sys" || :
+        umount "$CACHEDIR/layers/$layer_hash/merged/dev" || :
+    )
 
     
     # Subtask 3.f.4
     # Cleanup and record metadata
+    umount "$CACHEDIR/layers/$layer_hash/merged" || die "Failed to unmount overlay after RUN"
+    rmdir "$CACHEDIR/layers/$layer_hash/merged" 2>/dev/null || true
+
+    # Record metadata
+    echo "RUN $command" > "$CACHEDIR/layers/$layer_hash/metadata"
+    echo "$parent_hash" > "$CACHEDIR/layers/$layer_hash/parent"
+    current_layer="$CACHEDIR/layers/$layer_hash"
+    echo "$current_layer" > "$CACHEDIR/layers/.last_layer"
     
 }
 
@@ -155,18 +186,28 @@ handle_copy() {
     
     # Subtask 3.e.1
     # Create a new layer
+    mkdir -p "$CACHEDIR/layers/$layer_hash"/diff || die "Failed to create layer directories - diff"
+    mkdir -p "$CACHEDIR/layers/$layer_hash"/work || die "Failed to create layer directories - work"
+    mkdir -p "$CACHEDIR/layers/$layer_hash"/merged || die "Failed to create layer directories - merged"
 
 
     # Subtask 3.e.2
     # Temporarily mount the overlay filesystem
+    mount -t overlay overlay \
+          -o lowerdir="$parent_layers",upperdir="$CACHEDIR/layers/$layer_hash/diff",workdir="$CACHEDIR/layers/$layer_hash/work" \
+          "$CACHEDIR/layers/$layer_hash/merged" || die "Failed to mount overlay for COPY operation"
 
     
     # Subtask 3.e.3
     # Copy the files from source to destination
+    mkdir -p "$(dirname "$CACHEDIR/layers/$layer_hash/merged/$dest")" || die "Failed to create destination path"
+    cp -a "$src" "$CACHEDIR/layers/$layer_hash/merged/$dest" || die "Failed to copy '$src' to '$dest'"
 
     
     # Subtask 3.e.4
     # Unmount the overlay filesystem
+    umount "$CACHEDIR/layers/$layer_hash/merged" || die "Failed to unmount overlay after COPY"
+    rmdir "$CACHEDIR/layers/$layer_hash/merged" 2>/dev/null || true
 
 
     # Record metadata and parent layer
@@ -209,26 +250,26 @@ build() {
     fi
 
     # Remove on implementation of 3.d.1 <---
-    cp -a "$CACHEDIR/base/$BASE_NAME/" "$IMAGEDIR/$NAME"
-    echo -e "\e[1;32mImage $NAME built without any layers\e[0m"
+    # cp -a "$CACHEDIR/base/$BASE_NAME/" "$IMAGEDIR/$NAME"
+    # echo -e "\e[1;32mImage $NAME built without any layers\e[0m"
     # Remove on implementation of 3.d.1 <---
 
-    # # Subtask 3.d.1 - start 
-    # # Uncomment the below code to implement layering
-    # # Store the base layer and the layer stack in the image directory to be used later
-    # local BASE_LAYER=$"$CACHEDIR/base/$BASE_NAME"
-    # local LAYER_STACK="$BASE_LAYER"
+    # Subtask 3.d.1 - start 
+    # Uncomment the below code to implement layering
+    # Store the base layer and the layer stack in the image directory to be used later
+    local BASE_LAYER=$"$CACHEDIR/base/$BASE_NAME"
+    local LAYER_STACK="$BASE_LAYER"
     
-    # # For subtask 3.e and 3.f
-    # while IFS= read -r instruction; do
-    #     process_instruction "$instruction" "$LAYER_STACK"
-    #     LAYER_STACK=$(update_layer_stack "$current_layer/diff" "$LAYER_STACK")
-    # done < <(grep -E '^(RUN|COPY)' "$CONDUCTORFILE")
+    # For subtask 3.e and 3.f
+    while IFS= read -r instruction; do
+        process_instruction "$instruction" "$LAYER_STACK"
+        LAYER_STACK=$(update_layer_stack "$current_layer/diff" "$LAYER_STACK")
+    done < <(grep -E '^(RUN|COPY)' "$CONDUCTORFILE")
     
-    # mkdir -p "$IMAGEDIR/$NAME"
-    # echo "$LAYER_STACK" > "$IMAGEDIR/$NAME/layers"
-    # echo -e "\e[1;32mImage ${NAME:-} built with $(( $(echo "${LAYER_STACK}" | tr -dc ':' | wc -c) + 1 )) layers\e[0m"
-    # # Subtask 3.d.1 - end
+    mkdir -p "$IMAGEDIR/$NAME"
+    echo "$LAYER_STACK" > "$IMAGEDIR/$NAME/layers"
+    echo -e "\e[1;32mImage ${NAME:-} built with $(( $(echo "${LAYER_STACK}" | tr -dc ':' | wc -c) + 1 )) layers\e[0m"
+    # Subtask 3.d.1 - end
 }
 
 # This function shows all downloaded container images that are kept in .images directory
@@ -303,14 +344,22 @@ run() {
     [ -d "$IMAGEDIR/$IMAGE" ] || die "Image $IMAGE does not exist"
     [ -d "$CONTAINERDIR/$NAME" ] && die "Container $NAME already exists"
 
-    # Remove on implementation of 3.d.2 <---
-    mkdir -p "$CONTAINERDIR/$NAME/rootfs"
-    cp -a "$IMAGEDIR/$IMAGE"/* "$CONTAINERDIR/$NAME/rootfs"
-    # Remove on implementation of 3.d.2 <---
+    # # Remove on implementation of 3.d.2 <---
+    # mkdir -p "$CONTAINERDIR/$NAME/rootfs"
+    # cp -a "$IMAGEDIR/$IMAGE"/* "$CONTAINERDIR/$NAME/rootfs"
+    # # Remove on implementation of 3.d.2 <---
 
     # Subtask 3.d.2 - start
     # Create a new directory for the container rootfs
     # Read the layer stack from the image directory and mount the overlay filesystem
+    mkdir -p "$CONTAINERDIR/$NAME"/upper
+    mkdir -p "$CONTAINERDIR/$NAME"/work
+    mkdir -p "$CONTAINERDIR/$NAME"/merged
+    local LAYER_STACK=$(< "$IMAGEDIR/$IMAGE/layers")
+
+    mount -t overlay overlay \
+          -o lowerdir="$LAYER_STACK",upperdir="$CONTAINERDIR/$NAME/upper",workdir="$CONTAINERDIR/$NAME/work" \
+          "$CONTAINERDIR/$NAME/merged" || die "Failed to mount overlay"
     
     
     # Subtask 3.d.2 - end
@@ -321,9 +370,14 @@ run() {
 
     # Subtask 3.a.1
     # You should bind mount /dev within the container root fs
+    # mkdir -p "$CONTAINERDIR/$NAME/rootfs/dev"
+    # mount --bind /dev "$CONTAINERDIR/$NAME/rootfs/dev" || die "Failed to bind mount /dev"
 
     # Subtask 3.d.3
     # Modify subtask 3.a.1 to bind mount /dev
+    # after 3.d
+    mkdir -p "$CONTAINERDIR/$NAME/merged/dev"
+    mount --bind /dev "$CONTAINERDIR/$NAME/merged/dev" || die "Failed to bind mount /dev after overlay"
 
     # Subtask 3.a.2
     # - Use unshare to run the container in a new [uts, pid, net, mount, ipc] namespaces
@@ -333,9 +387,38 @@ run() {
     # - When unshare process exits all of its children also exit (--kill-child option)
     # - permission of root dir within container should be set to 755 for apt to work correctly
     # - $INIT_CMD_ARGS should be the entry program for the container
+    # chmod 755 "$CONTAINERDIR/$NAME/rootfs"
+
+    # unshare --uts --pid --net --mount --ipc --fork --kill-child \
+    #     sh -c "
+
+    #         # Store container init PID
+    #         echo \$\$ > \"$CONTAINERDIR/$NAME/container.pid\"
+
+    #         mount -t proc proc \"$CONTAINERDIR/$NAME/rootfs/proc\" || echo 'Failed to mount proc' >&2
+    #         mount -t sysfs sys \"$CONTAINERDIR/$NAME/rootfs/sys\" || echo 'Failed to mount sys' >&2
+
+    #         sleep infinity &
+            
+    #         exec chroot \"$CONTAINERDIR/$NAME/rootfs\" /bin/sh -c \"exec $INIT_CMD_ARGS\"
+    #     " || die "Failed to start container"
+
+    # Store unshare PID (the parent process)
+    # UNSHARE_PID=$!
+    # echo $UNSHARE_PID > "$CONTAINERDIR/$NAME/unshare.pid"
 
     # Subtask 3.d.3
     # Modify subtask 3.a.2 to use the overlay filesystem
+    chmod 755 "$CONTAINERDIR/$NAME/merged"
+
+    unshare --uts --pid --net --mount --ipc --fork --kill-child \
+        sh -c "
+            echo \$\$ > \"$CONTAINERDIR/$NAME/container.pid\"
+            mount -t proc proc \"$CONTAINERDIR/$NAME/merged/proc\" || echo 'Failed to mount proc' >&2
+            mount -t sysfs sys \"$CONTAINERDIR/$NAME/merged/sys\" || echo 'Failed to mount sys' >&2
+            sleep infinity &
+            exec chroot \"$CONTAINERDIR/$NAME/merged\" /bin/sh -c \"exec $INIT_CMD_ARGS\"
+        " || die "Failed to start container"
 
 }
 
@@ -368,7 +451,10 @@ stop() {
     # Subtask 3.d.3
     # Modify the below code to use the overlay filesystem
     # Lesson: Getting the pid of the entry process within the container
-    local PID=$(ps -ef | grep "$CONTAINERDIR/$NAME/rootfs" | grep -v grep | awk '{print $2}')
+    # local PID=$(ps -ef | grep "$CONTAINERDIR/$NAME/rootfs" | grep -v grep | awk '{print $2}')
+    # echo "DEBUG: $PID"
+    local PID=$(ps -ef | grep "$CONTAINERDIR/$NAME/merged" | grep -v grep | awk '{print $2}')
+    echo "DEBUG: $PID"
     
 
     # Lesson: Delete the ip link created in host for the container
@@ -383,12 +469,18 @@ stop() {
     # Modify the below code to use the overlay filesystem
     # This is a comprehensive list of unmounts
     # You can remove any if not required depending on how you mounted them
-    umount "$CONTAINERDIR/$NAME/rootfs/proc" > /dev/null 2>&1 || :
-    umount "$CONTAINERDIR/$NAME/rootfs/sys" > /dev/null 2>&1 || :
-    umount "$CONTAINERDIR/$NAME/rootfs/dev" > /dev/null 2>&1 || :
+    # umount "$CONTAINERDIR/$NAME/rootfs/proc" > /dev/null 2>&1 || :
+    # umount "$CONTAINERDIR/$NAME/rootfs/sys" > /dev/null 2>&1 || :
+    # umount "$CONTAINERDIR/$NAME/rootfs/dev" > /dev/null 2>&1 || :
+
+    umount "$CONTAINERDIR/$NAME/merged/proc" > /dev/null 2>&1 || :
+    umount "$CONTAINERDIR/$NAME/merged/sys" > /dev/null 2>&1 || :
+    umount "$CONTAINERDIR/$NAME/merged/dev" > /dev/null 2>&1 || :
 
     # Subtask 3.d.4
     # Unmount the overlay filesystem
+    umount "$CONTAINERDIR/$NAME/merged" > /dev/null 2>&1 || :
+
     
     # Deletes the container file
     rm -rf "$CONTAINERDIR/$NAME"
@@ -416,12 +508,13 @@ exec() {
     # Subtask 3.d.3
     # Modify the below code to use the overlay filesystem
     # This is the PID of the unshare process for the given container
-    local UNSHARE_PID=$(ps -ef | grep "$CONTAINERDIR/$NAME/rootfs" | grep -v grep | awk '{print $2}')
-    [ -z "$UNSHARE_PID" ] && die "Cannot find container process"
+    # local UNSHARE_PID=$(ps -ef | grep "$CONTAINERDIR/$NAME/rootfs" | grep -v grep | awk '{print $2}')
+    local UNSHARE_PID=$(ps -ef | grep "$CONTAINERDIR/$NAME/merged" | grep -v grep | awk '{print $2}')
+    [ -z "$UNSHARE_PID" ] && die "Cannot find container process unshare pid"
 
     # This is the PID of the process that unshare executed within the container
     local CONTAINER_INIT_PID=$(pgrep -P $UNSHARE_PID | head -1)
-    [ -z "$CONTAINER_INIT_PID" ] && die "Cannot find container process"
+    [ -z "$CONTAINER_INIT_PID" ] && die "Cannot find container process container init pid"
 
     # Subtask 3.b.1
     # Write command to join the existing namespace {all namespaces: uts, pid, net, mount, ipc} 
@@ -430,6 +523,13 @@ exec() {
     # The executed process should be within correct namespace and root
     # directory as of the container and tools like ps, top should show only processes
     # running within the container
+    nsenter --target $CONTAINER_INIT_PID \
+            --mount --uts --ipc --net --pid \
+            /bin/sh -c "
+                mount -t proc proc /proc 2>/dev/null || true
+
+                exec $EXEC_CMD_ARGS
+            " || die "Failed to execute command in container"
 
 
 }
@@ -462,7 +562,8 @@ addnetwork() {
 
     # Subtask 3.d.3
     # Modify the below code to use the overlay filesystem (Use only one pid)
-    local PID=$(ps -ef | grep "$CONTAINERDIR/$NAME/rootfs" | grep -v grep | awk '{print $2}')
+    # local PID=$(ps -ef | grep "$CONTAINERDIR/$NAME/rootfs" | grep -v grep | awk '{print $2}')
+    local PID=$(ps -ef | grep "$CONTAINERDIR/$NAME/merged" | grep -v grep | awk '{print $2}')
 
     local CONDUCTORNS="/proc/$PID/ns/net"
     local NSDIR=$NETNSDIR/$NAME
@@ -489,6 +590,10 @@ addnetwork() {
     # Inside the container, it should use INSIDE_PEER interface and within the host it should use
     # OUTSIDE_PEER interface
     # You should use iproute2 tool (ip command)
+    ip link add "$OUTSIDE_PEER" type veth peer name "$INSIDE_PEER"
+
+    # move interface to container interface
+    ip link set "$INSIDE_PEER" netns "$NAME"
 
 
     # Lesson: By default linux does not forward packets, it only acts as an end host
@@ -499,6 +604,9 @@ addnetwork() {
     # Enable the interfaces that you have created within the host and the container
     # You should also enable lo interface within the container (which is disabled by default)
     # In total here 3 interfaces should be enabled
+    ip link set "$OUTSIDE_PEER" up
+    ip -n "$NAME" link set "$INSIDE_PEER" up
+    ip -n "$NAME" link set lo up
 
 
     # Lesson: Configuring addresses and adding routes for the container in the routing table

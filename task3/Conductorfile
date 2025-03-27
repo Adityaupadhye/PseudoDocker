@@ -1,1 +1,3 @@
 FROM debian:bookworm
+COPY file.txt /app/file.txt
+RUN mkdir -p /app/new_dir
