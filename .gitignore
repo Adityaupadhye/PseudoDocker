@@ -3,3 +3,7 @@
 
 /task4/counter-service/
 /task4/external-service/
+
+.cache/
+.containers/
+.images/

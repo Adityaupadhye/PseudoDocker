@@ -412,11 +412,13 @@ run() {
     chmod 755 "$CONTAINERDIR/$NAME/merged"
 
     unshare --uts --pid --net --mount --ipc --fork --kill-child \
-        sh -c "
+        setsid sh -c "
             echo \$\$ > \"$CONTAINERDIR/$NAME/container.pid\"
             mount -t proc proc \"$CONTAINERDIR/$NAME/merged/proc\" || echo 'Failed to mount proc' >&2
             mount -t sysfs sys \"$CONTAINERDIR/$NAME/merged/sys\" || echo 'Failed to mount sys' >&2
-            sleep infinity &
+
+            tail -f /dev/null &
+            
             exec chroot \"$CONTAINERDIR/$NAME/merged\" /bin/sh -c \"exec $INIT_CMD_ARGS\"
         " || die "Failed to start container"
 
