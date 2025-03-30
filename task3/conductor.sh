@@ -119,7 +119,7 @@ handle_run() {
 
     # Subtask 3.f.2
     # Temporarily mount the overlay filesystem
-    mount -t overlay overlay \
+    mount -v -t overlay overlay \
           -o lowerdir="$parent_layers",upperdir="$CACHEDIR/layers/$layer_hash/diff",workdir="$CACHEDIR/layers/$layer_hash/work" \
           "$CACHEDIR/layers/$layer_hash/merged" || die "Failed to mount overlay for RUN"
     
@@ -193,7 +193,7 @@ handle_copy() {
 
     # Subtask 3.e.2
     # Temporarily mount the overlay filesystem
-    mount -t overlay overlay \
+    mount -v -t overlay overlay \
           -o lowerdir="$parent_layers",upperdir="$CACHEDIR/layers/$layer_hash/diff",workdir="$CACHEDIR/layers/$layer_hash/work" \
           "$CACHEDIR/layers/$layer_hash/merged" || die "Failed to mount overlay for COPY operation"
 
@@ -357,7 +357,9 @@ run() {
     mkdir -p "$CONTAINERDIR/$NAME"/merged
     local LAYER_STACK=$(< "$IMAGEDIR/$IMAGE/layers")
 
-    mount -t overlay overlay \
+    echo "lowerdir = ${LAYER_STACK}"
+
+    mount -v -t overlay overlay \
           -o lowerdir="$LAYER_STACK",upperdir="$CONTAINERDIR/$NAME/upper",workdir="$CONTAINERDIR/$NAME/work" \
           "$CONTAINERDIR/$NAME/merged" || die "Failed to mount overlay"
     
@@ -412,14 +414,14 @@ run() {
     chmod 755 "$CONTAINERDIR/$NAME/merged"
 
     unshare --uts --pid --net --mount --ipc --fork --kill-child \
-        setsid sh -c "
+        sh -c "
             echo \$\$ > \"$CONTAINERDIR/$NAME/container.pid\"
             mount -t proc proc \"$CONTAINERDIR/$NAME/merged/proc\" || echo 'Failed to mount proc' >&2
             mount -t sysfs sys \"$CONTAINERDIR/$NAME/merged/sys\" || echo 'Failed to mount sys' >&2
 
             tail -f /dev/null &
             
-            exec chroot \"$CONTAINERDIR/$NAME/merged\" /bin/sh -c \"exec $INIT_CMD_ARGS\"
+            exec chroot \"$CONTAINERDIR/$NAME/merged\" /bin/sh -c \"ls /app/ && exec $INIT_CMD_ARGS\"
         " || die "Failed to start container"
 
 }
@@ -518,6 +520,10 @@ exec() {
     local CONTAINER_INIT_PID=$(pgrep -P $UNSHARE_PID | head -1)
     [ -z "$CONTAINER_INIT_PID" ] && die "Cannot find container process container init pid"
 
+    # Get absolute path to merged directory
+    local CONTAINER_ROOT=$(realpath "$CONTAINERDIR/$NAME/merged")
+    echo "[EXEC] container root path: $CONTAINER_ROOT"
+
     # Subtask 3.b.1
     # Write command to join the existing namespace {all namespaces: uts, pid, net, mount, ipc} 
     # of the running container and execute the given command and args. 
@@ -525,12 +531,28 @@ exec() {
     # The executed process should be within correct namespace and root
     # directory as of the container and tools like ps, top should show only processes
     # running within the container
+    # nsenter --target $CONTAINER_INIT_PID \
+    #         --mount --uts --ipc --net --pid \
+    #         /bin/sh -c "
+    #             mount -t proc proc /proc 2>/dev/null || true
+
+    #             exec $EXEC_CMD_ARGS
+    #         " || die "Failed to execute command in container"
+
+    # nsenter - again enter namespace with proper chroot
     nsenter --target $CONTAINER_INIT_PID \
             --mount --uts --ipc --net --pid \
-            /bin/sh -c "
+            /bin/bash -c "
                 mount -t proc proc /proc 2>/dev/null || true
+                mount -t sysfs sys '$CONTAINER_ROOT/sys' 2>/dev/null || true
+                mount --bind /dev '$CONTAINER_ROOT/dev' 2>/dev/null || true
 
-                exec $EXEC_CMD_ARGS
+                exec chroot '$CONTAINER_ROOT' /bin/bash -c \"
+                    export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+                    cd / 2>/dev/null || true
+                    
+                    exec $EXEC_CMD_ARGS
+            \"
             " || die "Failed to execute command in container"
 
 
