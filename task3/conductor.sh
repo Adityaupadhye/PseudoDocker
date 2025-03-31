@@ -119,7 +119,7 @@ handle_run() {
 
     # Subtask 3.f.2
     # Temporarily mount the overlay filesystem
-    mount -v -t overlay overlay \
+    mount -t overlay overlay \
           -o lowerdir="$parent_layers",upperdir="$CACHEDIR/layers/$layer_hash/diff",workdir="$CACHEDIR/layers/$layer_hash/work" \
           "$CACHEDIR/layers/$layer_hash/merged" || die "Failed to mount overlay for RUN"
     
@@ -193,7 +193,7 @@ handle_copy() {
 
     # Subtask 3.e.2
     # Temporarily mount the overlay filesystem
-    mount -v -t overlay overlay \
+    mount -t overlay overlay \
           -o lowerdir="$parent_layers",upperdir="$CACHEDIR/layers/$layer_hash/diff",workdir="$CACHEDIR/layers/$layer_hash/work" \
           "$CACHEDIR/layers/$layer_hash/merged" || die "Failed to mount overlay for COPY operation"
 
@@ -359,7 +359,7 @@ run() {
 
     echo "lowerdir = ${LAYER_STACK}"
 
-    mount -v -t overlay overlay \
+    mount -t overlay overlay \
           -o lowerdir="$LAYER_STACK",upperdir="$CONTAINERDIR/$NAME/upper",workdir="$CONTAINERDIR/$NAME/work" \
           "$CONTAINERDIR/$NAME/merged" || die "Failed to mount overlay"
     
@@ -421,7 +421,7 @@ run() {
 
             tail -f /dev/null &
             
-            exec chroot \"$CONTAINERDIR/$NAME/merged\" /bin/sh -c \"ls /app/ && exec $INIT_CMD_ARGS\"
+            exec chroot \"$CONTAINERDIR/$NAME/merged\" /bin/sh -c \"exec $INIT_CMD_ARGS\"
         " || die "Failed to start container"
 
 }
@@ -522,7 +522,7 @@ exec() {
 
     # Get absolute path to merged directory
     local CONTAINER_ROOT=$(realpath "$CONTAINERDIR/$NAME/merged")
-    echo "[EXEC] container root path: $CONTAINER_ROOT"
+    # echo "[EXEC] container root path: $CONTAINER_ROOT"
 
     # Subtask 3.b.1
     # Write command to join the existing namespace {all namespaces: uts, pid, net, mount, ipc} 

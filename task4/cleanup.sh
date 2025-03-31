@@ -3,7 +3,7 @@ cleanup_previous() {
     sudo ./conductor.sh stop cs-cont
     sudo ./conductor.sh stop es-cont
     sudo ./conductor.sh rmi es-image
-    sudo ./conductor.sh rmi es-image
+    sudo ./conductor.sh rmi cs-image
 
     sudo umount -l .containers/*/merged 2> /dev/null
     sudo umount -l .cache/layers/*/merged 2> /dev/null

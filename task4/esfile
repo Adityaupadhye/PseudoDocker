@@ -1,7 +1,5 @@
 FROM debian:bookworm
 
-RUN mkdir -p /src/
+COPY ./external-service /app/external-service
 
-COPY ./external-service /src/external-service
-
-RUN cd /src/external-service && apt update && apt install -y python3 python3-flask python3-requests
+RUN cd /app/external-service && apt update && apt install -y python3 python3-flask python3-requests
