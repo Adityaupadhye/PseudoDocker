@@ -71,22 +71,21 @@ echo "IP addr of cs-cont $CS_IP"
 
 ES_IP_COMM=$(./conductor.sh exec es-cont -- hostname -I)
 ES_IP=$(echo $ES_IP_COMM | awk '{print $11}')
-echo "IP addr of cs-cont $ES_IP"
+echo "IP addr of es-cont $ES_IP"
 
 
 
 # # 6. Within cs-cont launch the counter service using exec [path to counter-service directory within cs-cont]/run.sh
 ./conductor.sh exec cs-cont -- /app/counter-service/counter-service 8080 1 &
 
-
 # # 7. Within es-cont launch the external service using exec [path to external-service directory within es-cont]/run.sh
-./conductor.sh exec es-cont -- python3 /app/external-service/app.py "http://$CS_IP:8080" &
+./conductor.sh exec es-cont -- python3 /app/external-service/app.py http://${CS_IP}:8080 &
 
-
+sleep 5
 
 # # 8. Within your host system open/curl the url: http://localhost:3000 to verify output of the service
 # echo "Verifying service through localhost..."
-curl http://$ES_IP:8080/ > output.txt 2>&1
+curl --retry 5 --retry-delay 2 --retry-connrefused http://${ES_IP}:8080/ > output.txt 2> error.txt | tee combined.txt
 
 # # 9. On any system which can ping the host system open/curl the url: `http://<host-ip>:3000` to verify
 # #    output of the service

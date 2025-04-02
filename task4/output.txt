@@ -1,4 +1,1 @@
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
-curl: (7) Failed to connect to 192.168.9.2 port 8080 after 4 ms: Couldn't connect to server
+Hello CS695 Explorers! You have sent request to this container 1 times.
