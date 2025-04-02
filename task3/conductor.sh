@@ -513,7 +513,7 @@ exec() {
     # Modify the below code to use the overlay filesystem
     # This is the PID of the unshare process for the given container
     # local UNSHARE_PID=$(ps -ef | grep "$CONTAINERDIR/$NAME/rootfs" | grep -v grep | awk '{print $2}')
-    local UNSHARE_PID=$(ps -ef | grep "$CONTAINERDIR/$NAME/merged" | grep -v grep | awk '{print $2}')
+    local UNSHARE_PID=$(ps -ef | grep "$CONTAINERDIR/$NAME/merged" | grep -v grep | awk '{print $2}' | head -1)
     [ -z "$UNSHARE_PID" ] && die "Cannot find container process unshare pid"
 
     # This is the PID of the process that unshare executed within the container
